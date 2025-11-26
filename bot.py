@@ -7,12 +7,12 @@ from flask import Flask
 import threading
 import asyncio
 
-# Flask app untuk Render + UptimeRobot
+# Flask app untuk Northflank + UptimeRobot
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "✅ Bot is running!"
+    return "✅ Discord League Bot is running!"
 
 @app.route('/health')
 def health():
@@ -23,7 +23,7 @@ def ping():
     return "pong"
 
 def run_flask():
-    port = int(os.environ.get('PORT', 10000))
+    port = int(os.environ.get('PORT', 8080))  # Northflank pakai port 8080
     app.run(host='0.0.0.0', port=port)
 
 # Bot setup
@@ -33,7 +33,7 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 # Data storage
 class DataManager:
     def __init__(self):
-        self.data_file = '/tmp/league_data.json'
+        self.data_file = '/tmp/league_data.json'  # Pakai /tmp untuk persistence
         self.data = self.load_data()
     
     def load_data(self):
@@ -69,13 +69,14 @@ data_manager = DataManager()
 @bot.event
 async def on_ready():
     print(f'✅ {bot.user} has connected to Discord!')
+    print(f'✅ Bot is in {len(bot.guilds)} guilds')
     try:
         synced = await bot.tree.sync()
         print(f"✅ Synced {len(synced)} command(s)")
     except Exception as e:
         print(f"❌ Error syncing commands: {e}")
 
-# SIGN COMMAND (Fixed)
+# SIGN COMMAND
 @bot.tree.command(name="sign", description="Sign pemain ke tim Anda")
 @app_commands.describe(user="User yang akan di-sign")
 async def sign(interaction: discord.Interaction, user: discord.Member):
@@ -208,10 +209,7 @@ async def sign(interaction: discord.Interaction, user: discord.Member):
         await user.send(embed=embed, view=view)
         await interaction.followup.send(f"✅ Offer telah dikirim ke {user.mention}!", ephemeral=True)
     except discord.Forbidden:
-        await interaction.followup.send(
-            f"❌ Tidak bisa mengirim DM ke {user.mention}. Pastikan DM mereka terbuka!", 
-            ephemeral=True
-        )
+        await interaction.followup.send(f"❌ Tidak bisa mengirim DM ke {user.mention}. Pastikan DM mereka terbuka!", ephemeral=True)
 
 # SETUP COMMAND
 @bot.tree.command(name="setup", description="Setup roles dan channel untuk liga (Owner only)")
@@ -453,27 +451,48 @@ async def debug(interaction: discord.Interaction):
             break
     
     debug_info = f"""
-**DEBUG INFO**
+**🤖 BOT DEBUG INFO**
 
 **User**: {interaction.user.display_name}
 **Has Manager Role**: {'✅ YES' if manager_role_id in user_roles else '❌ NO'}
 **Has Assistant Role**: {'✅ YES' if assistant_role_id in user_roles else '❌ NO'}
 **Your Team**: {f'<@&{user_team_id}>' if user_team_id else '❌ NO TEAM'}
 **Total Teams**: {len(guild_data.get('teams', {}))}
+**Bot Ping**: {round(bot.latency * 1000)}ms
 """
     
     await interaction.response.send_message(debug_info, ephemeral=True)
+
+# REMOVE TEAM COMMAND
+@bot.tree.command(name="removeteam", description="Hapus tim (Owner only)")
+@app_commands.describe(team_role="Role tim yang akan dihapus")
+async def removeteam(interaction: discord.Interaction, team_role: discord.Role):
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("❌ Hanya owner server yang bisa menggunakan command ini!", ephemeral=True)
+        return
+    
+    guild_data = data_manager.get_guild_data(interaction.guild_id)
+    
+    if str(team_role.id) not in guild_data.get('teams', {}):
+        await interaction.response.send_message("❌ Tim tidak ditemukan!", ephemeral=True)
+        return
+    
+    del guild_data['teams'][str(team_role.id)]
+    data_manager.save_guild_data(interaction.guild_id, guild_data)
+    
+    await interaction.response.send_message(f"✅ Tim {team_role.mention} berhasil dihapus!")
 
 # Run the bot
 async def main():
     # Start Flask server in background
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
+    print("✅ Flask server started on port 8080")
     
     # Run Discord bot
     token = os.environ.get('DISCORD_TOKEN')
     if not token:
-        print("❌ DISCORD_TOKEN not found!")
+        print("❌ DISCORD_TOKEN not found in environment variables!")
         return
     
     await bot.start(token)
