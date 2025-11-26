@@ -1,0 +1,16 @@
+name: discord-league-bot
+services:
+  - name: app
+    type: web
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - port: 8080
+        http: true
+    env:
+      - name: DISCORD_TOKEN
+        value: "your_bot_token_here"
+    resources:
+      cpu: 100
+      memory: 512Mi
